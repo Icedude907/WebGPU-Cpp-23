@@ -1,8 +1,5 @@
 #!/usr/bin/python3
 
-# This file is part of the "Learn WebGPU for C++" book.
-#   https://github.com/eliemichel/LearnWebGPU
-#
 # MIT License
 # Copyright (c) 2022-2025 Elie Michel
 #
@@ -34,6 +31,7 @@ import os
 from os.path import dirname, isfile, join
 from typing import Dict, List
 import logging
+from pathlib import Path
 
 DEFAULT_HEADER_URL = "https://raw.githubusercontent.com/webgpu-native/webgpu-headers/main/webgpu.h"
 
@@ -52,11 +50,11 @@ def makeArgParser():
     parser.add_argument("-v", "--version", action='store_true',
                         help="Display version information")
 
-    parser.add_argument("-t", "--template", type=str,
+    parser.add_argument("-t", "--template", type=Path,
                         default="webgpu.template.hpp",
                         help="Template used for generating the output binding file")
 
-    parser.add_argument("-o", "--output", type=str,
+    parser.add_argument("-o", "--output", type=Path,
                         default="webgpu.hpp",
                         help="Path where to output the generated webgpu.hpp")
 
@@ -70,10 +68,6 @@ def makeArgParser():
                         If no URL is specified, the official header from '{DEFAULT_HEADER_URL}'
                         is used.
                         """)
-
-    parser.add_argument("-d", "--defaults", action='append',
-                        default=[],
-                        help="""This argument has been removed, use --use-init-macros instead.""")
 
     parser.add_argument("--ext-suffix",
                         default="",
@@ -97,9 +91,6 @@ def makeArgParser():
     parser.add_argument("--no-const", action='store_false', dest="use_const",
                         help="By default, all methods of opaque handle types are const. This option makes them all non-const.")
 
-    parser.add_argument("--use-init-macros", action='store_true',
-                        help="Use initialization macros provided by webgpu.h instead of writing custom setDefaults methods.")
-
     parser.add_argument("--use-inline", action='store_true', dest="use_inline",
                         help="Make all methods inlined (seems to have an effect with clang, but MSVC fails at linking in that case).")
 
@@ -121,22 +112,12 @@ def main(args):
         parseHeader(api, header)
 
     binding = produceBinding(args, api, meta)
-    
+
     generateOutput(args.output, template, binding)
 
 def applyDefaultArgs(args):
-    if not args.use_init_macros or args.defaults != []:
-        raise Exception(
-            "The option --use-init-macros is now mandatory (because INIT macros are " +
-            "now part of the standard API) and as a consequence the option --defaults " +
-            "must no longer be used to provide default values. Use older versions of " +
-            "this generator to run it on headers that do not provide such macros. Using " +
-            "init macros will become the default in future version of this generator."
-        )
     if not args.header_url:
         args.header_url = [DEFAULT_HEADER_URL]
-    if not args.defaults:
-        args.defaults = ["defaults.txt", "extra-defaults.txt"]
 
     if hasattr(args, "virtual_fs"):
         VfsFile.virtual_fs = args.virtual_fs
@@ -161,13 +142,13 @@ def openVfs(filename, mode='r', **kwargs):
     This is a wrapper around the standard 'open' that enables paths starting
     with "vfs://" to refer to files in a virtual file system.
     """
-    if filename.startswith("vfs://"):
+    if str(filename).startswith("vfs://"):
         return VfsFile(filename[6:])
     else:
         return open(filename, mode, **kwargs)
 
 def isfileVfs(filename):
-    if filename.startswith("vfs://"):
+    if str(filename).startswith("vfs://"):
         return filename[6:] in VfsFile.virtual_fs
     else:
         return isfile(filename)
@@ -255,7 +236,7 @@ def parseHeader(api, header):
             #.replace("WGPU_NULLABLE", "")
         for line in header.split("\n")
     ])
-    
+
     struct_re = re.compile(r"struct *WGPU(\w+) *{")
     handle_re = re.compile(r"typedef struct .*WGPU([^_]\w+)\s*;")
     procedure_re = re.compile(r"(?:WGPU_EXPORT\s+)?([\w *]+) wgpu(\w+)\((.*)\)\s*;")
@@ -546,7 +527,7 @@ def produceBinding(args, api, meta):
 
         if entry_name.startswith("INTERNAL__"):
             continue
-        
+
         decls = []
         implems = []
 
@@ -662,7 +643,7 @@ def produceBinding(args, api, meta):
                 if return_type in enum_names:
                     begin_cast = f"static_cast<{return_type}>("
                     end_cast = ")"
-            
+
             wrapped_call = f"{begin_cast}wgpu{entry_name}{proc.name}({argument_names_str}){end_cast}"
             maybe_const = " const" if use_const else ""
             name_and_args = f"{method_name}({', '.join(arguments)}){maybe_const}"
@@ -849,7 +830,7 @@ def loadTemplate(path):
             .replace('{{{{', '{') # transform double brackets into format string
             .replace('}}}}', '}')
         )
-    
+
     return template, {
         "injected-decls": parseTemplateInjection(injected),
         "blacklist": blacklist,
@@ -866,7 +847,7 @@ class InjectedData():
 
 def parseTemplateInjection(text):
     it = iter(text.split("\n"))
-    
+
     injected_data = InjectedData(
         members = defaultdict(list),
         macro_override = {},
@@ -946,4 +927,4 @@ def toConstantCase(caml_case):
 if __name__ == "__main__":
     args = makeArgParser().parse_args()
     main(args)
-    
+

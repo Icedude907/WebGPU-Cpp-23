@@ -1,22 +1,19 @@
 /**
  * This is a RAII wrapper for WebGPU native API.
- * 
- * This file is part of the "Learn WebGPU for C++" book.
- *   https://eliemichel.github.io/LearnWebGPU
- * 
+ *
  * MIT License
  * Copyright (c) 2022-2025 Elie Michel
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included in all
  * copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -113,32 +110,7 @@ private:
 
 #define HANDLE(Type) using Type = wgpu::raii::Wrapper<wgpu::Type>
 
-HANDLE(Adapter);
-HANDLE(BindGroup);
-HANDLE(BindGroupLayout);
-HANDLE(Buffer);
-HANDLE(CommandBuffer);
-HANDLE(CommandEncoder);
-HANDLE(ComputePassEncoder);
-HANDLE(ComputePipeline);
-HANDLE(Device);
-HANDLE(ExternalTexture);
-HANDLE(Instance);
-HANDLE(PipelineLayout);
-HANDLE(QuerySet);
-HANDLE(Queue);
-HANDLE(RenderBundle);
-HANDLE(RenderBundleEncoder);
-HANDLE(RenderPassEncoder);
-HANDLE(RenderPipeline);
-HANDLE(Sampler);
-HANDLE(ShaderModule);
-HANDLE(SharedBufferMemory);
-HANDLE(SharedFence);
-HANDLE(SharedTextureMemory);
-HANDLE(Surface);
-HANDLE(Texture);
-HANDLE(TextureView);
+{{handles_oneliner}}
 
 #undef HANDLE
 

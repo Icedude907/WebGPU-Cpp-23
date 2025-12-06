@@ -1,3 +1,9 @@
+# WebGPU C++23
+This is a modification of Élie Michel's WebGPU C++ repository to introduce more modern C++ features and properly ensure it is a thin-wrapper around the underlying types.
+
+---------------
+# Original Readme
+
 <div align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/eliemichel/LearnWebGPU/main/images/webgpu-dark.svg">
@@ -19,16 +25,29 @@ WebGPU-C++
 Table of Contents
 -----------------
 
- - [What is this?](#what-is-this)
-   * [Features at a glance](#features-at-a-glance)
- - [Quick Start](#quick-start)
-   * [Setup](#setup)
-   * [Usage](#usage)
- - [Going Further](#going-further)
-   * [Custom generation](#custom-generation)
-   * [Default values](#default-values)
-   * [See also](#see-also)
- - [License](#license)
+- [WebGPU C++23](#webgpu-c23)
+- [Original Readme](#original-readme)
+- [WebGPU-C++](#webgpu-c)
+  - [Table of Contents](#table-of-contents)
+  - [What is this?](#what-is-this)
+    - [Features at a glance](#features-at-a-glance)
+  - [Quick Start](#quick-start)
+    - [Setup](#setup)
+    - [Usage](#usage)
+      - [Namespace](#namespace)
+      - [Default descriptor values](#default-descriptor-values)
+      - [Object notation](#object-notation)
+      - [Capturing closures](#capturing-closures)
+      - [Scoped enumerations](#scoped-enumerations)
+  - [Going further](#going-further)
+    - [Custom generation](#custom-generation)
+      - [Blacklist](#blacklist)
+      - [Member injection](#member-injection)
+    - [Default values](#default-values)
+    - [Nullable descriptors](#nullable-descriptors)
+    - [Update all generated examples](#update-all-generated-examples)
+    - [See also](#see-also)
+  - [License](#license)
 
 What is this?
 -------------
