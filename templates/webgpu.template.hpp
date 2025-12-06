@@ -45,8 +45,7 @@ struct Type : public WGPU ## Type { \
 	using W = WGPU ## Type; /*Wrapped C Type*/ \
 	constexpr Type() : W() { nextInChain = nullptr; } \
 	constexpr Type(const W &other) : W(other) { nextInChain = nullptr; } \
-	static constexpr S Default = S::setDefault();
-	constexpr Type& operator=(DefaultFlag) { *this = S::Default; return *this; }
+	constexpr Type& operator=(DefaultFlag) { *this = S::setDefault(); return *this; }
 
 #define STRUCT(Type) \
 struct Type : public WGPU ## Type { \
@@ -54,8 +53,7 @@ struct Type : public WGPU ## Type { \
 	using W = WGPU ## Type; /*Wrapped C Type*/ \
 	constexpr Type() : W() {} \
 	constexpr Type(W const& other) : W(other) {} \
-	static constexpr S Default = S::setDefault();
-	constexpr Type& operator=(DefaultFlag) { *this = S::Default; return *this; }
+	constexpr Type& operator=(DefaultFlag) { *this = S::setDefault(); return *this; }
 
 #define ENUM(Type) \
 struct Type { \
