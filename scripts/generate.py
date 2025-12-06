@@ -1,29 +1,5 @@
 #!/usr/bin/python3
 
-# MIT License
-# Copyright (c) 2022-2025 Elie Michel
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-
-# NB: The process is inpired by PpluX' wgpu.hpp generator
-#   (see https://github.com/pplux/wgpu.hpp )
-
 import re
 from dataclasses import dataclass, field
 from collections import defaultdict
@@ -50,23 +26,19 @@ def makeArgParser():
     parser.add_argument("-v", "--version", action='store_true',
                         help="Display version information")
 
-    parser.add_argument("-t", "--template", type=Path,
-                        default="webgpu.template.hpp",
+    parser.add_argument("-t", "--template", type=Path, required=True,
                         help="Template used for generating the output binding file")
 
     parser.add_argument("-o", "--output", type=Path,
-                        default="webgpu.hpp",
-                        help="Path where to output the generated webgpu.hpp")
+                        default="./",
+                        help="Output directory to place the generated webgpu.hpp & downloaded headers")
 
     parser.add_argument("-u", "--header-url", action='append',
                         default=[],
                         help=f"""
-                        URL of the official webgpu.h from the webgpu-native project. If the URL
-                        does not start with http(s)://, it is considered as a local file. You can
-                        specify this option multiple times to agregate multiple headers (e.g.,
-                        the standard webgpu.h plus backend-specific extensions wgpu.h).
-                        If no URL is specified, the official header from '{DEFAULT_HEADER_URL}'
-                        is used.
+                        URL or file path of webgpu.h and backend-specific extensions (e.g.: wgpu.h).
+                        May be specified multiple times.
+                        Default: '{DEFAULT_HEADER_URL}'
                         """)
 
     parser.add_argument("--ext-suffix",
@@ -79,6 +51,9 @@ def makeArgParser():
 
     # Advanced options
 
+    parser.add_argument("--no-save-inputs", action='store_false', dest="save_input_files",
+                        help="Do not save the files specified by `-u` to the output directory.")
+
     parser.add_argument("--no-scoped-enums", action='store_false', dest="use_scoped_enums",
                         help="Do not replace WebGPU enums with C++ scoped enums")
 
@@ -90,9 +65,6 @@ def makeArgParser():
 
     parser.add_argument("--no-const", action='store_false', dest="use_const",
                         help="By default, all methods of opaque handle types are const. This option makes them all non-const.")
-
-    parser.add_argument("--use-inline", action='store_true', dest="use_inline",
-                        help="Make all methods inlined (seems to have an effect with clang, but MSVC fails at linking in that case).")
 
     return parser
 
@@ -108,12 +80,15 @@ def main(args):
     template, meta = loadTemplate(args.template)
     api = WebGpuApi()
     for url in args.header_url:
-        header = downloadHeader(url)
+        header, fname = downloadHeader(url)
         parseHeader(api, header)
+        if args.save_input_files:
+            with open(args.output / fname, 'w', encoding="utf-8") as f:
+                f.write(header)
 
     binding = produceBinding(args, api, meta)
 
-    generateOutput(args.output, template, binding)
+    generateOutput(args.output / "webgpu.hpp", template, binding)
 
 def applyDefaultArgs(args):
     if not args.header_url:
@@ -480,15 +455,15 @@ def produceBinding(args, api, meta):
             base_type = arg_type[:-8]
             arg_type = f"const {base_type}&"
             arg_c = f"&{arg_c}"
-            arg_cpp = f"*reinterpret_cast<{base_type} const *>({arg.name})"
+            arg_cpp = f"*std::bit_cast<{base_type} const *>({arg.name})"
         elif arg_type in callbacks:
             arg_type = f"{arg_type}&&"
             arg_c = "cCallback"
             skip_next = True
         elif arg_type in handle_cptr_names:
-            arg_c = f"reinterpret_cast<WGPU{arg_type}>({arg_c})"
+            arg_c = f"std::bit_cast<WGPU{arg_type}>({arg_c})"
         elif arg_type in handle_ptr_names:
-            arg_c = f"reinterpret_cast<WGPU{arg_type}>({arg_c})"
+            arg_c = f"std::bit_cast<WGPU{arg_type}>({arg_c})"
 
         if args.use_scoped_enums:
             if arg_type in enum_names:
@@ -501,7 +476,8 @@ def produceBinding(args, api, meta):
 
         return sig_cpp, arg_c, arg_cpp, skip_next
 
-    maybe_inline = "inline " if args.use_inline else ""
+    maybe_inline = "inline "
+    maybe_constexpr = "constexpr "
     class_names = [f"WGPU{c.name}" for c in api.classes]
     classes_and_handles = (
         [ ('CLASS', cls_api) for cls_api in api.classes ] +
@@ -517,7 +493,7 @@ def produceBinding(args, api, meta):
             argument_self = "*this"
             use_const = False
         elif entry_type == 'HANDLE':
-            binding["handles_decl"].append(f"class {entry_name};")
+            binding["handles_decl"].append(f"struct {entry_name};")
             macro = "HANDLE"
             namespace = "handles"
             namespace_impl = "handles_impl"
@@ -533,7 +509,7 @@ def produceBinding(args, api, meta):
 
         # Auto-generate setDefault
         if entry_type == 'CLASS':
-            decls.append(f"\t{maybe_inline}void setDefault();\n")
+            decls.append(f"\t{maybe_constexpr}static S setDefault();\n")
 
             cls_api = handle_or_class
             prop_names = [f"{p.name}" for p in cls_api.properties]
@@ -543,19 +519,20 @@ def produceBinding(args, api, meta):
                 logging.warning(f"Initialization macro '{init_macro}' was not found, falling back to empty initializer '{{}}'.")
                 init_macro = "{}"
             prop_defaults = [
-                f"\t*this = WGPU{entry_name} {init_macro};\n",
+                f"\t{entry_name} x = WGPU{entry_name} {init_macro};\n",
             ]
             if "chain" in prop_names:
                 if entry_name in api.stypes:
                     prop_defaults.extend([
-                        f"\tchain.sType = {api.stypes[entry_name]};\n",
-                        f"\tchain.next = nullptr;\n",
+                        f"\tx.chain.sType = {api.stypes[entry_name]};\n",
+                        f"\tx.chain.next = nullptr;\n",
                     ])
                 else:
                     logging.warning(f"Type {entry_name} starts with a 'chain' field but has no apparent associated SType.")
             implems.append(
-                f"{maybe_inline}void {entry_name}::setDefault() " + "{\n"
+                f"{maybe_constexpr}{entry_name} {entry_name}::setDefault() " + "{\n"
                 + "".join(prop_defaults)
+                + "\treturn x;\n"
                 + "}\n"
             )
 
@@ -588,15 +565,15 @@ def produceBinding(args, api, meta):
                 body = (
                       f"\tauto handle = std::make_unique<{cb.name}Callback>({cb_name});\n"
                     + f"\tstatic auto cCallback = []({cb.raw_arguments}) -> void {{\n"
-                    + f"\t\t{cb.name}Callback& callback = *reinterpret_cast<{cb.name}Callback*>(userdata);\n"
+                    + f"\t\t{cb.name}Callback& callback = *std::bit_cast<{cb.name}Callback*>(userdata);\n"
                     + f"\t\tcallback({', '.join(cb_arg_names)});\n"
                     + "\t};\n"
                     + "\t{wrapped_call};\n"
                     + "\treturn handle;\n"
                 )
-                argument_names.append(f"reinterpret_cast<void*>(handle.get())")
+                argument_names.append(f"std::bit_cast<void*>(handle.get())")
                 return_type = f"std::unique_ptr<{cb.name}Callback>"
-                maybe_no_discard = "NO_DISCARD "
+                maybe_no_discard = "[[nodiscard]] "
             elif proc.arguments[-1].type.endswith("CallbackInfo"): # NEW callback mechanism
                 cb_type = proc.arguments[-1].type[4:-len("Info")]
                 cb = callbacks[cb_type]
@@ -612,7 +589,7 @@ def produceBinding(args, api, meta):
                 body = "\n".join([
                     f"\tauto* lambda = new Lambda(callback);",
                     f"\tauto cCallback = []({', '.join(cb_args)}, void* userdata1, void*) -> void {{",
-                    f"\t\tstd::unique_ptr<Lambda> lambda(reinterpret_cast<Lambda*>(userdata1));",
+                    f"\t\tstd::unique_ptr<Lambda> lambda(std::bit_cast<Lambda*>(userdata1));",
                     f"\t\t(*lambda)({', '.join(cb_arg_names)});",
                     "\t};",
                     f"\tWGPU{cb_type}Info callbackInfo = {{",
@@ -673,11 +650,11 @@ def produceBinding(args, api, meta):
 
                         alternatives = [
                             (
-                                [f"const std::vector<{vec_type}>& {vec_name}"],
+                                [f"std::span<{vec_type}> {vec_name}"],
                                 [f"static_cast<{a.type}>({vec_name}.size())", f"{vec_name}.data()"]
                             ),
                             (
-                                [f"const {vec_type}& {vec_name}"],
+                                [f"{vec_type} const& {vec_name}"],
                                 [f"1", f"&{vec_name}"]
                             ),
                         ]
@@ -782,7 +759,7 @@ def produceBinding(args, api, meta):
         for cb in api.callbacks
     }
     for cb_name, cb_args in cb_dict.items():
-        binding["callbacks"].append(f"using {cb_name}Callback = std::function<void({', '.join(cb_args)})>;")
+        binding["callbacks"].append(f"using {cb_name}Callback = void({', '.join(cb_args)});")
 
     for ta in api.type_aliases:
         binding["type_aliases"].append(f"using {ta.wgpu_type} = {ta.aliased_type};")
@@ -803,7 +780,7 @@ def loadTemplate(path):
         in_blacklist = False
         injected = ""
         blacklist = ""
-        template = ""
+        template: str = ""
         for line in f:
             if line.strip() == "{{begin-inject}}":
                 in_inject = True
@@ -873,24 +850,26 @@ def parseTemplateInjection(text):
 def downloadHeader(url):
     if url.startswith("https://") or url.startswith("http://"):
         logging.info(f"Downloading webgpu-native header from {url}...")
+        import urllib.parse
         import urllib.request
+        fname = os.path.basename(urllib.parse.urlparse(url).path)
         response = urllib.request.urlopen(url)
         data = response.read()
         text = data.decode('utf-8')
-        return text
+        return text, fname
     else:
         resolved = resolveFilepath(url)
         logging.info(f"Loading webgpu-native header from {resolved}...")
         with openVfs(resolved, encoding="utf-8") as f:
-            return f.read()
+            return f.read(), Path(resolved).name
 
 def generateOutput(path, template, fields):
-    logging.info(f"Writing generated binding to {path}...")
     out = template.format(**fields)
+    logging.info(f"Writing generated binding to {path}...")
     with openVfs(path, 'w', encoding="utf-8") as f:
         f.write(out)
 
-def resolveFilepath(path):
+def resolveFilepath(path: str):
     for p in [ join(dirname(__file__), path), path ]:
         if isfileVfs(p):
             return p
